@@ -3164,6 +3164,11 @@ bool Telegram::findFormatBytesFromKnownMeterSignatures(vector<uchar>* format_byt
         hex2bin("02FF200413523B", format_bytes);
         debug("(wmbus) using hard coded format for hash 7c0e");
     }
+    else if (format_signature == 0x2e29)
+    {
+        hex2bin("040604FF0704FF0804140259025D043B042D542D042204FF22", format_bytes);
+        debug("(wmbus) using hard coded format for hash 2e29");
+    }
     else
     {
         ok = false;
