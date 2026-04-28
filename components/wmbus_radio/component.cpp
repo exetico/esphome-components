@@ -83,16 +83,40 @@ void Radio::receive_frame() {
 
   auto packet = std::make_unique<Packet>();
 
-  if (!this->radio->read_in_task(packet->rx_data_ptr(), packet->rx_capacity(), 0))
-    return;
+  // Read preamble bytes first. Evaluate rx_data_ptr() before rx_capacity()
+  // since rx_capacity() resizes the buffer and would invalidate a deferred ptr.
+  {
+    uint8_t *ptr = packet->rx_data_ptr();
+    size_t cap = packet->rx_capacity();
+    if (!this->radio->read_in_task(ptr, cap, 0)) {
+      this->radio->restart_rx();
+      return;
+    }
+  }
 
-  if (!packet->calculate_payload_size())
+  if (!packet->calculate_payload_size()) {
+    this->radio->restart_rx();
     return;
+  }
 
-  if (!this->radio->read_in_task(packet->rx_data_ptr(), packet->rx_capacity(), 3))
-    return;
+  // Read the remaining payload bytes.
+  {
+    uint8_t *ptr = packet->rx_data_ptr();
+    size_t cap = packet->rx_capacity();
+    if (!this->radio->read_in_task(ptr, cap, 3)) {
+      this->radio->restart_rx();
+      return;
+    }
+  }
 
   packet->set_rssi(this->radio->get_rssi());
+
+  // Restart RX immediately after reading the packet so the CC1101 FIFO is
+  // flushed and the radio is ready for the next frame. Without this, the
+  // CC1101 keeps accumulating bytes (up to its fixed packet-length limit),
+  // causing spurious FIFO-threshold interrupts and missed real packets.
+  this->radio->restart_rx();
+
   auto packet_ptr = packet.get();
 
   if (xQueueSend(this->packet_queue_, &packet_ptr, 0) == pdTRUE) {
