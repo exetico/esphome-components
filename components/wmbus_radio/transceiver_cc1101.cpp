@@ -53,8 +53,10 @@ void CC1101::setup() {
   this->write_register(CC1101_PKTLEN, 0xFF);
   // Packet control 1: No address check, no append status, no CRC autoflush
   this->write_register(CC1101_PKTCTRL1, 0x00);
-  // Packet control 0: Variable packet length, no whitening, no CRC
-  this->write_register(CC1101_PKTCTRL0, 0x02);
+  // Packet control 0: fixed length (PKTLEN=0xFF), no whitening, no CRC.
+  // 0x02 (infinite) from 956d4a9 regressed reception on ESP32 + CC1101;
+  // 0x00 is the value used by the last known-good build (39182474).
+  this->write_register(CC1101_PKTCTRL0, 0x00);
 
   // No device address filtering
   this->write_register(CC1101_ADDR, 0x00);
