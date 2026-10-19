@@ -23,6 +23,7 @@ public:
   void setup() override;
   void loop() override;
   void receive_frame();
+  void restart_and_clear_();
 
   void add_frame_handler(std::function<void(Frame *)> &&callback);
 

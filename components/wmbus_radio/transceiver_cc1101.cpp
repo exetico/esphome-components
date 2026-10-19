@@ -2,6 +2,9 @@
 
 #include "esphome/core/log.h"
 
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
 namespace esphome {
 namespace wmbus_radio {
 static const char *TAG = "CC1101";
@@ -315,13 +318,24 @@ bool CC1101::read_in_task(uint8_t *buffer, size_t length, uint32_t offset) {
       }
     }
 
-    // Timeout: 500ms without progress
-    if (millis() - last_progress > 500) {
-      ESP_LOGW(TAG, "RX timeout after %lu bytes (need %lu)", (unsigned long)(total + offset), (unsigned long)(length + offset));
+    // Timeout without progress. A complete wM-Bus frame takes < 30 ms at
+    // 100 kbps, so 50 ms is plenty. The old 500 ms, combined with the busy
+    // wait below, could keep this priority-24 task spinning on core 1 for
+    // seconds and trip the task watchdog.
+    if (millis() - last_progress > 50) {
+      if (total + offset == 0) {
+        // Woken without data (stale notification / false sync): not an error.
+        ESP_LOGV(TAG, "RX woke with empty FIFO");
+      } else {
+        ESP_LOGW(TAG, "RX timeout after %lu bytes (need %lu)", (unsigned long)(total + offset), (unsigned long)(length + offset));
+      }
       return false;
     }
 
-    delayMicroseconds(200);
+    // Yield instead of busy-waiting so the ESPHome loop, WiFi and the idle
+    // task on core 1 can run. 1 tick = 1 ms (CONFIG_FREERTOS_HZ=1000); the
+    // 64-byte FIFO needs ~5 ms to fill at 100 kbps, so no overflow risk.
+    vTaskDelay(1);
   }
 
   return (total == length);

@@ -84,31 +84,31 @@ void Radio::wakeup_receiver_task_from_isr(TaskHandle_t *arg) {
 
 void Radio::receive_frame() {
   if (!ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(60000))) {
-    this->radio->restart_rx();
+    this->restart_and_clear_();
     return;
   }
 
   auto packet = std::make_unique<Packet>();
 
   if (!this->radio->read_in_task(packet->rx_data_ptr(), packet->rx_capacity(), 0)) {
-    this->radio->restart_rx();
+    this->restart_and_clear_();
     return;
   }
 
   if (!packet->calculate_payload_size()) {
-    this->radio->restart_rx();
+    this->restart_and_clear_();
     return;
   }
 
   if (!this->radio->read_in_task(packet->rx_data_ptr(), packet->rx_capacity(), 3)) {
-    this->radio->restart_rx();
+    this->restart_and_clear_();
     return;
   }
 
   packet->set_rssi(this->radio->get_rssi());
 
   // Re-arm sync word detector for next packet
-  this->radio->restart_rx();
+  this->restart_and_clear_();
 
   auto packet_ptr = packet.get();
 
@@ -119,6 +119,14 @@ void Radio::receive_frame() {
     packet.release();
   } else
     ESP_LOGW(TAG, "Queue send failed");
+}
+
+// Restart RX and drop wake-ups that queued up while the previous packet was
+// being read (the FIFO threshold IRQ fires several times per packet). Without
+// this, the next ulTaskNotifyTake() returns at once on an empty FIFO.
+void Radio::restart_and_clear_() {
+  this->radio->restart_rx();
+  ulTaskNotifyTake(pdTRUE, 0);
 }
 
 void Radio::receiver_task(Radio *arg) {
